@@ -1,0 +1,659 @@
+---
+title: "Tipología y ciclo de vida de los datos - Práctica 2"
+author: "Mike Findlay"
+date: "7 Enero 2019"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: true
+    
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+    number_sections: true
+---
+
+# Descripción del Dataset
+
+El conjunto que utilizamos es el “Adult dataset" que esta disponible desde Kaggle y del UCI Machine Learning Repository. Consiste de aproximademente 32000 observaciones, y 15 variables. 
+
+El objetivo es ver lo bien que podemos predecir si los ingresos anuales (income) de una persona superior a $50000 utilizando el conjunto de variables en este conjunto de datos.
+
+Aquí esta la descripción de las variables:
+
+* age – The age of the individual
+* workclass – The type of employer the individual has. Whether they are government, military, private, and so on.
+* fnlwgt – The \# of people the census takers believe that observation represents. We will be ignoring this variable
+* education – The highest level of education achieved for that individual
+* education.num – Highest level of education in numerical form
+* marital.status – Marital status of the individual
+* occupation – The occupation of the individual
+* relationship – Contains family relationship values like husband, father, and so on, but only contains one per observation.
+* race – descriptions of the individuals race. Black, White, etc
+* sex – Male or Female
+* capital.gain – Capital gains recorded
+* capital.loss – Capital Losses recorded
+* hours.per.week – Hours worked per week
+* native.country – Country of origin for person
+* income – Boolean Variable. Whether or not the person makes more than \$50,000 per annum income.
+
+
+# Integración y selección de los datos de interés a analizar
+
+## Primer contacto con el juego de datos, visualizamos su estructura.
+
+```{r}
+# Cargamos los paquetes R que vamos a usar
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(nortest)
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Cargamos el juego de datos
+datosAdult <- read.csv('adult.csv',stringsAsFactors = TRUE, header = TRUE)
+
+# Nombres de los atributos
+#names(datosAdult) <- c("age","workclass","fnlwgt","education","education-num","marital-status","occupation","relationship","race","sex","capital-gain","capital-loss","hour-per-week","native-country","income")
+```
+
+```{r}
+# Verificamos la estructura del juego de datos
+str(datosAdult)
+```
+
+Tenemos 32561 observaciones en 15 variables
+
+
+```{r}
+kable(head(datosAdult))
+```
+
+# Limpieza de los datos
+
+## Trabajamos en los atributos con valores vacíos
+
+
+```{r}
+# Estadísticas de valores vacíos
+colSums(is.na(datosAdult))
+colSums(datosAdult=="")
+```
+
+Parece que no existen valores vacios.  Sin embargo, en el fichero adult.names que describe los datos dice:
+
+Conversion of original data as follows:
+
+| 1. Discretized agrossincome into two ranges with threshold 50,000.
+
+| 2. Convert U.S. to US to avoid periods.
+
+| 3. Convert Unknown to "?"
+
+| 4. Run MLC++ GenCVFiles to generate data,test.
+
+O sea que han cambiado los Unknowns (vacios) a "?".
+
+Reimportamos los datos para poner cambiar los "?" a valores vacios (NA)s.
+
+```{r}
+# utilizamos na.strings para definir los caracteres de NA.
+datosAdult <- read.csv('adult.csv',stringsAsFactors = TRUE, header = TRUE, na.strings="?")
+
+```
+
+Ahora comprobamos los valores vacios de nuevo.
+```{r}
+# Estadísticas de valores vacíos
+colSums(is.na(datosAdult))
+colSums(datosAdult=="")
+```
+Ahora vemos que el atributo workclass tiene 1836 valores vacios,
+                            occupation tiene 1843 valores vacios,
+                          y native.country tiene 583 valores vacios.
+                            
+Podemos intentar predecir los valores que son vacios.  Primero miramos a **native.country** .
+
+
+```{r}
+# Visualizamos la distribución de la variable "native.country":
+ggplot(data=datosAdult,aes(x=native.country))+geom_bar(color='black')+theme(axis.text.x=element_text(angle=45, vjust =1, hjust = 1))
+```
+Podemos asumir que los valores nulos de **native.country** son probablemente de origen EEUU.  Ya que la mayoria de los datos son de ahí y normalmente la razón de no especificar el pais nativo es que se trata de una persona que ya es un nativo de EEUU.
+
+Podemos borrar los casos que tienen **occupation** de valor vacío - estaría dificil hacer una estimación de los valores correctos.
+
+Podemos  borrar los casos que tienen **workclass** de valor vacío - estaría dificil hacer una estimaci?ó de los valores correctos.
+
+Además no necesitamos el atributo **fnlwgt** para tratar los datos y se puede eliminarlo.
+
+```{r}
+# Aplicamos el valor "United-States" para los valores vacíos de la variable "native.country"
+datosAdult$native.country[is.na(datosAdult$native.country)]="United-States"
+```
+
+```{r}
+#Borramos los casos con valores vacios de occupation y workclass
+#Before the delete we check
+summary(datosAdult)
+#delete the NAs
+
+datosAdult <- na.omit(datosAdult)
+
+# remember to re-factor the effected categories
+
+datosAdult$workclass <- factor(datosAdult$workclass)
+datosAdult$occupation <- factor(datosAdult$occupation)
+datosAdult$native.country <- factor(datosAdult$native.country)
+```
+
+```{r}
+#after the delete we check again
+summary(datosAdult)
+
+```
+We now have reduced the observations in the dataset datosAdult from 32561 to 30718 records.
+
+Ahora verificamos que no tenemos los valores vacíos.
+```{r}
+# Estadísticas de valores vacíos
+colSums(is.na(datosAdult))
+colSums(datosAdult=="")
+```
+
+## Identificación y tratamiento de valores extremos
+
+We will check the numeric variables (age, education.num, capital.gain, capital.loss, hours.per.week) for outliers.
+
+### Variable age
+```{r}
+AgeBoxplot<-ggplot(datosAdult,aes(y=datosAdult$age))+geom_boxplot() +labs(x="Age (Years)")+ guides(fill=guide_legend(title="Box Plot of Age"))
+
+AgeBoxplot
+
+```
+
+In this case we see that although there are outliers with age above 75, these are not unreasonable data values, so we will keep these values.
+
+### Variable Education.num
+```{r}
+
+Education.numBoxplot<-ggplot(datosAdult,aes(y=datosAdult$education.num))+geom_boxplot() +labs(x="Education.num")+ guides(fill=guide_legend(title="Box Plot of Education.num"))
+
+Education.numBoxplot
+
+```
+
+In this case we see that the outliers with values 1 and 2 are not unreasonable values and correspond to an educational level of the person.
+
+### Variable Capital.gain
+```{r}
+CapGainBoxplot<-ggplot(datosAdult,aes(y=datosAdult$capital.gain))+geom_boxplot() +labs(x="Capital Gain")+ guides(fill=guide_legend(title="Box Plot of capital.gain"))
+
+CapGainBoxplot
+
+```
+
+Here we see that capital gain values are mostly zeros.  The main outlier of concern is the one around 100000.  Let´s check the variation of capital.gain.
+```{r}
+summary(datosAdult$capital.gain)
+
+```
+
+So we have a median value of zero and a mean of 1106.  The maximum value of 99999 is an outlier probably caused by data entry field size limitations.
+
+The percentage of zero values is very high for this variable.
+
+```{r}
+(nrow(subset(datosAdult, datosAdult$capital.gain == 0))/nrow(datosAdult))*100
+```
+
+
+Let's look at the distribution of the non-zero values of **capital.gain**
+
+```{r}
+summary(datosAdult$capital.gain[datosAdult$capital.gain !=0])
+
+```
+
+And let's see a barchart of the non-zero values.
+
+```{r}
+
+# Miramos a capital.gain en bins de tamaño 1000.
+
+
+ggplot(datosAdult[which(datosAdult$capital.gain !=0),]) + aes(x=capital.gain) + 
+  geom_histogram(binwidth=1000, color='black')
+```
+
+Así que los valores de 99999 representan a gente con capital.gain muy alta y no podemos descartar el valor.  Miramos a la otra variable capital.loss
+
+### Variable Capital.loss
+```{r}
+CapLossBoxplot<-ggplot(datosAdult,aes(y=datosAdult$capital.loss))+geom_boxplot() +labs(x="Capital Loss")+ guides(fill=guide_legend(title="Box Plot of capital.loss"))
+
+CapLossBoxplot
+
+```
+
+Here we see that capital loss values are mostly zeros.  Let´s check the variation of capital.loss.
+```{r}
+summary(datosAdult$capital.loss)
+
+```
+
+So we have a median value of zero and a mean of 88.91.  The maximum value of 4356 is not really an outlier as we have many zero values for capital.loss.
+
+The percentage of zero values is very high for this variable.
+
+```{r}
+(nrow(subset(datosAdult, datosAdult$capital.loss == 0))/nrow(datosAdult))*100
+```
+
+
+Let's look at the distribution of the non-zero values of **capital.loss**
+
+```{r}
+summary(datosAdult$capital.loss[datosAdult$capital.loss !=0])
+
+```
+
+And let's see a barchart of the non-zero values.
+
+```{r}
+
+# Miramos a capital.loss en bins de tamaño 100.
+
+
+ggplot(datosAdult[which(datosAdult$capital.loss !=0),]) + aes(x=capital.loss) + 
+  geom_histogram(binwidth=100, color='black')
+```
+
+
+
+Así que los valores de de capital.loss parecen razonables.
+
+### Variable hours.per.week
+```{r}
+HoursBoxplot<-ggplot(datosAdult,aes(y=datosAdult$hours.per.week))+geom_boxplot() +labs(x="Hours per week")+ guides(fill=guide_legend(title="Box Plot of Hours per week"))
+
+HoursBoxplot
+
+```
+
+Here we see that the boxplot highlights significant numbers of outliers.  Let´s check the variation of hours.per.week.
+```{r}
+summary(datosAdult$hours.per.week)
+
+```
+
+Let's see a histogram of the distribution of values.
+
+Miramos a hours.per.week en bins de tamaño 10 horas.
+
+```{r}
+ggplot(datosAdult) + aes(x=hours.per.week) + 
+  geom_histogram(binwidth=10, color='black')
+```
+
+Aunque hay algunos persona que traban más de 100 horas por semana, la distribución no indica que deberíamos descartar outliers.
+
+# Análisis de los datos
+
+## Selección de los grupos de datos
+
+We will start by considering which variables may have an important correlation with income bracket (two values <50k and >50k).
+To begin with, we will remove the variable fnlwgt which assigns a weighting related on the population size of the US State in which the person lives.
+
+```{r}
+datosAdult$fnlwgt<-NULL
+```
+
+Now we will change the *income* factor variable to have the values 0 or 1 to represent <50k and >50k
+```{r}
+datosAdult$income <- as.numeric(datosAdult$income)-1
+```
+
+### Correlation of numeric variables
+
+Now we will correlate the numeric variables (age, education.num, capital.gain, capital.loss, hours.per.week and the class income) to see what shows up!
+```{r}
+#Correlation plot
+num.var <- c(1,4,10:12, 14)
+library("corrplot")
+corrplot(cor(datosAdult[,num.var]))
+
+```
+
+So we see a positive correlation with all numeric variables, but especially with **education.num**, **age** and **hours.per.week**
+
+### Category variables
+Let's look at the category variables  workclass, education, marital.status, occupation, relationship, race, sex, native.country.
+
+First let's re-factor the income class.
+
+```{r}
+datosAdult$income <- factor(datosAdult$income, labels=c("<=50k", ">50k"))
+#Checking the levels
+levels(datosAdult$income)
+
+```
+
+
+#### workclass
+```{r}
+
+ggplot(datosAdult,aes(x=workclass,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("Work Class")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=workclass,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+So the self-employed-inc and federal-gov employees are most likely to have high salaries.  Those Without-pay do not have high salaries.
+
+
+#### education
+```{r}
+
+ggplot(datosAdult,aes(x=education,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("Education")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=education,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+So as we might expect the people with degrees and professional schooling are more likely to have high salaries.
+
+#### marital.status
+```{r}
+
+ggplot(datosAdult,aes(x=marital.status,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("Marital Status")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=marital.status,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+So we see that people who are married are more likely to have high salaries.
+
+#### occupation
+```{r}
+
+ggplot(datosAdult,aes(x=occupation,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("Occupation")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=occupation,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+So as we might expect the people who are executive managers or have aq p`rofessional speciality are more likely to have high salaries.
+
+#### relationship
+```{r}
+
+ggplot(datosAdult,aes(x=relationship,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("relationship")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=relationship,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+As with the marital.status variable, people who are married are more likely to have high salaries.
+
+#### race
+```{r}
+
+ggplot(datosAdult,aes(x=race,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("Race")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=race,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+So we see that White and Asian-Pac-Islander ethnic groups are more likely to have high salaries.
+
+#### sex
+```{r}
+
+ggplot(datosAdult,aes(x=sex,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("Sex")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=sex,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+So we find that Males are more likely to have high salaries than Females.
+
+#### native.country
+```{r}
+
+ggplot(datosAdult,aes(x=native.country,fill=income))+
+  geom_bar(color='black')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ggtitle('Proportion of People with income above 50k')+
+  xlab("Native Country")+ylab("Number of People")
+```
+
+Let's display as a frequency plot too.
+
+```{r}
+ggplot(data = datosAdult,aes(x=native.country,fill=income))+geom_bar(color='black',position="fill")+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ylab("Frecuencia")
+```
+There are no particularly strong variations for native.country, so it looks like we should remove the variable from the analysis dataset, but we will check with a Chi-squared test for variable dependency first of all.
+
+
+## Comprobación de la normalidad y homogeneidad de la varianza
+
+Utilizamos la prueba Anderson-Darling normality test for each of the variables age, education.num, capital.gain, capital.loss, hours.per.week.
+
+```{r}
+pvalage=ad.test(datosAdult$age)$p.value
+pvaledu=ad.test(datosAdult$education.num)$p.value
+pvalcapg=ad.test(datosAdult$capital.gain)$p.value
+pvalcapl=ad.test(datosAdult$capital.loss)$p.value
+pvalhours=ad.test(datosAdult$hours.per.week)$p.value
+
+pvals<-matrix(c(pvalage,pvaledu,pvalcapg,pvalcapl,pvalhours),ncol=1, byrow=TRUE)
+colnames(pvals)<-"pvalue"
+rownames(pvals)<-c("age","education.num","capital.gain","capital.loss","hours.per.week")
+
+as.table(pvals)
+
+```
+El p.value para todas las variables es menor que 0.05 así que niguna de las variables tiene una distribución normal.
+
+Utilizamos la prueba Fligner-Killeen paracomprobar la homogeneity de las variables.
+```{r}
+fligner.test(education.num~education, data=datosAdult)
+```
+Así que veremos que education y education.num con un p-value de 1.0 (>0.05) indica que tienen variances que son homogeneas.
+
+
+
+## Aplicación de pruebas estadísticas
+
+### Pruebas de contraste de hipótesis
+Here we will look at tests for independence of the categorical variables using Pearson's Chi-Squared test.
+The null hypothesis is:  $H_0 : the two variables are independent in the sample$
+The alternative hypothesis is: $H_A : the two variables are dependent within the sample$
+
+#### Workclass and Income
+
+```{r}
+chisq.test(table(datosAdult$workclass, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+#### Education and Income
+
+```{r}
+chisq.test(table(datosAdult$education, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+#### Marital.status and Income
+
+```{r}
+chisq.test(table(datosAdult$marital.status, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+#### Occupation and Income
+
+```{r}
+chisq.test(table(datosAdult$occupation, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+#### Relationship and Income
+
+```{r}
+chisq.test(table(datosAdult$relationship, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+
+#### Race and Income
+
+```{r}
+chisq.test(table(datosAdult$race, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+#### Sex and Income
+
+```{r}
+chisq.test(table(datosAdult$sex, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+#### Native.country and Income
+
+```{r}
+chisq.test(table(datosAdult$native.country, datosAdult$income)) 
+```
+The p-value is very small, so we reject the null hypothesis at the 0.05 significance level and we expect that the two variable are dependent.
+
+As a consequence, we see that the **income** class is dependent on all the category variables, including **native.country**, so we won't remove this from the result set.
+
+### Correlaciones
+
+We will get values for the correlations of the 3 strongest variables that we plotted earlier (i.e. Age, Education.num and Hours.per.week)
+Now we will change the *income* factor variable to have the values 0 or 1 to represent <50k and >50k
+
+```{r}
+datosAdult$income <- as.numeric(datosAdult$income)-1
+```
+
+```{r}
+corAge=cor(datosAdult$age,datosAdult$income)
+corEducation.num=cor(datosAdult$education.num,datosAdult$income)
+corHours=cor(datosAdult$hours.per.week,datosAdult$income)
+
+corAge
+corEducation.num
+corHours
+
+
+```
+
+
+
+
+
+### Regresiones
+```{r}
+# Regresores cuantitativos con mayor coeficiente
+# de correlación con respecto al income
+
+ageV = datosAdult$age
+eduV = datosAdult$education.num
+hoursV = datosAdult$hours.per.week
+
+# Regresores cualitativos
+occupationV = datosAdult$occupation
+maritalV = datosAdult$marital.status
+nativeV = datosAdult$native.country
+sexV = datosAdult$sex
+
+# Variable a predecir
+incomeV = datosAdult$income
+# Generación de varios modelos
+modelo1 <- lm(incomeV ~ ageV + eduV + hoursV + occupationV + maritalV, data = datosAdult)
+modelo2 <- lm(incomeV ~ ageV + eduV + hoursV + occupationV + maritalV + nativeV , data = datosAdult)
+modelo3 <- lm(incomeV ~ ageV + eduV + hoursV + occupationV + maritalV + nativeV + sexV , data = datosAdult)
+
+tabla.coeficientes <- matrix(c(1, summary(modelo1)$r.squared,
+2, summary(modelo2)$r.squared,
+3, summary(modelo3)$r.squared),
+ncol = 2, byrow = TRUE)
+
+colnames(tabla.coeficientes) <- c("Modelo", "R^2")
+tabla.coeficientes
+
+```
+En este caso e modelo3 es el mejor fit porque tiene un mayor coeficiente de determinación.
+
+Generamos el conjunto de datos para hacer más modelos.
+
+```{r}
+write.csv(datosAdult, file = "datosAdult_out.csv", row.names=FALSE)
+```
+
+
+# Representación de los resultados
+
+As presented graphically and in tables above, we have seen that several variable factors strongly influence the model generation.
+We have seen the correlations between numerical and categorical variables and the class of income.
+It seems likely that this dataset can be used to predict income class given the set of variables available.
+
+Although the normality of the variable distributions is proven to be not normal, we can still apply statistical analysis because the sample size is so large (much greater than 30 records).
+
+
+
+
+# Resolucíon del problema
+
+We have created a simple regression model that allows for fitting the data and making income predictions for a new set of data.  In practice this would be a starting point in order to obtain a much better model using other techniques.  In this case, because of the large number of categorical variables as well as numerical variables, the best modelling option may be to use decision trees.
+
+
